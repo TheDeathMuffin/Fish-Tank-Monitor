@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
-from gpiozero import LED
+from gpiozero import LED, Button, MCP3208
+import I2C_LCD_driver
 from time import sleep
 import smtplib
 import subprocess
 import urllib.request
 import requests
+import os
 
 #
 #
@@ -17,14 +19,34 @@ daily_event_log = {}            # This dictionary stores each recorded alarm eve
 daily_temp_record = {}          # List stores data points gathered for daily report
 daily_waterDist_record = {}     # List stores data point gathered for daily report
 send_to = ['9378251843@tmomail.net']        # Number to which alerts and notifications will be sent.
+working_dir = '/home/pi/Fish_Tank_Monitor/Logs/'   # System working directory.
 
-Light = LED()        # Relay object to control lighting system.
+LED1 = LED(, active_high = False)
+LED2 = LED(, active_high = False)
+LED3 = LED(, active_high = False)
+LED4 = LED(, active_high = False)
+Button1 = Button(,pull+up = True, bounce_time = 0.25)
+Button2 = Button(,pull+up = True, bounce_time = 0.25)
+Button3 = Button(,pull+up = True, bounce_time = 0.25)
+lcd = I2C_LCD_driver.lcd()      # LCD Display.
+lcd.lcd_clear()                 # Initially clear.
+temperature = MCP3208(channel = 0, differential = False, max_voltage = 3.3)             # Holds real-time temperature sensor readings.
+
+Light = LED()        # Relay object to control lighting system.                     # WILL NOT ACTUALLY USE RELAY - USING MOSFETS TO CONTROL RGB LIGHT LEVELS!!!
+Light.off()          # Initially off.
 Light_setting = 'disabled'   # Holds light setting (has the states disabled, always on, or adaptive to light level).
 Light_status = 'off'         # Holds light status (on or off).
 Feeder =             # Servo motor to control feeding system.
 Feeder_setting = 'disabled'  # Holds feeder setting (has the states disabled, always on, and not to feed at night).
 
+# Contains all necessary setup steps.
+def setup():
+    # If working directory does not exist, create it and change to it.
+    if not os.path.exists(working_dir):
+        os.makedirs(working_dir)
+    os.chdir(working_dir)
 
+    print("Setup is complete!")
 
 # Main program function. Responsible for looping and executing other checks and functions as needed.
 def main():
@@ -56,7 +78,7 @@ def average_values():
     total_temp = 0
     total_waterDist = 0
     for i in range(100):      # Over 10 seconds, gathers 100 data points from each sensor.
-        total_temp += #GET TEMP HERE
+        total_temp += (temperature.voltage * 180) + 32          # Voltage to degrees F conversion.
         total_waterDist += #GET WATERDIST HERE
         sleep(0.1)
     return total_temp/100, total_waterDist/100
@@ -75,7 +97,7 @@ def alarm(avg_temp, avg_waterDist):
         event = event + 'Temperature is too low.'       # Specifies event.
     log_event(event)
     subject = 'FISH TANK ALERT!'
-    body = """/
+    body = """
 Alarms Activated:
 %s    
 
@@ -106,7 +128,14 @@ def record_data(time, avg_temp, avg_waterDist):
     daily_waterDist_record[time_str] = avg_waterDist
     print('Data recorded for the time: ' + time)
 
-
+# Logs data to files using date and type of data. HAS NOT BEEN CALLED BY ANY OTHER FUNCTIONS YET!!!
+def log_data_to_file(date, type, data):
+    # If log folder for the current date does not exist, create it.
+    log_path = working_dir + date
+    if not os.path.exists(log_path):
+        os.mkdir(log_path)
+    with open(log_path + '/' + type, 'a') as file:       # Opens target log file, determined by type specified (daily or event). Creates file if it does not exist.
+        file.write(data)            # CHECK THAT THE DATA WRITES ON A NEWLINE. ALSO, MAKE SURE DATA LOOKS GOOD/IS WELL FORMATTED FOR LOGGING.
 
 # Compiles data into a graph and sends it and a message to the tank owner.
 def daily_update():
@@ -201,4 +230,10 @@ Subject: %s
 
 
 #### PROGRAM EXECUTION BEGINS HERE ####
+setup()
 main()
+
+
+# Events for Event-Driven Operations:
+# ALLOW A BUTTON PRESS TO INITIATE THE SETUP PROCESS/RE-DO THE SETUP PROCESS.
+# ALLOW A BUTTON TO TURN ON/OFF FEATURES (LED light strip, automated feeding).
